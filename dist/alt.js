@@ -2,6 +2,8 @@
 
 var _interopRequire = function (obj) { return obj && obj.__esModule ? obj["default"] : obj; };
 
+var _applyConstructor = function (Constructor, args) { var instance = Object.create(Constructor.prototype); var result = Constructor.apply(instance, args); return result != null && (typeof result == "object" || typeof result == "function") ? result : instance; };
+
 var _get = function get(object, property, receiver) { var desc = Object.getOwnPropertyDescriptor(object, property); if (desc === undefined) { var parent = Object.getPrototypeOf(object); if (parent === null) { return undefined; } else { return get(parent, property, receiver); } } else if ("value" in desc && desc.writable) { return desc.value; } else { var getter = desc.get; if (getter === undefined) { return undefined; } return getter.call(receiver); } };
 
 var _inherits = function (subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) subClass.__proto__ = superClass; };
@@ -83,7 +85,7 @@ function NoopClass() {}
 var builtIns = Object.getOwnPropertyNames(NoopClass);
 var builtInProto = Object.getOwnPropertyNames(NoopClass.prototype);
 
-var getInternalMethods = function (obj, excluded) {
+function getInternalMethods(obj, excluded) {
   return Object.getOwnPropertyNames(obj).reduce(function (value, m) {
     if (excluded.indexOf(m) !== -1) {
       return value;
@@ -92,7 +94,7 @@ var getInternalMethods = function (obj, excluded) {
     value[m] = obj[m];
     return value;
   }, {});
-};
+}
 
 var AltStore = (function () {
   function AltStore(dispatcher, model, state, StoreModel) {
@@ -331,7 +333,7 @@ var StoreMixinEssentials = {
   }
 };
 
-var setAppState = function (instance, data, onStore) {
+function setAppState(instance, data, onStore) {
   var obj = instance.deserialize(data);
   Object.keys(obj).forEach(function (key) {
     var store = instance.stores[key];
@@ -343,9 +345,9 @@ var setAppState = function (instance, data, onStore) {
       onStore(store);
     }
   });
-};
+}
 
-var snapshot = function (instance) {
+function snapshot(instance) {
   for (var _len = arguments.length, storeNames = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
     storeNames[_key - 1] = arguments[_key];
   }
@@ -360,17 +362,17 @@ var snapshot = function (instance) {
     obj[key] = customSnapshot ? customSnapshot : store.getState();
     return obj;
   }, {});
-};
+}
 
-var saveInitialSnapshot = function (instance, key) {
+function saveInitialSnapshot(instance, key) {
   var state = instance.stores[key][STATE_CONTAINER];
   var initial = instance.deserialize(instance[INIT_SNAPSHOT]);
   initial[key] = state;
   instance[INIT_SNAPSHOT] = instance.serialize(initial);
   instance[LAST_SNAPSHOT] = instance[INIT_SNAPSHOT];
-};
+}
 
-var filterSnapshotOfStores = function (instance, serializedSnapshot, storeNames) {
+function filterSnapshotOfStores(instance, serializedSnapshot, storeNames) {
   var stores = instance.deserialize(serializedSnapshot);
   var storesToReset = storeNames.reduce(function (obj, name) {
     if (!stores[name]) {
@@ -380,9 +382,9 @@ var filterSnapshotOfStores = function (instance, serializedSnapshot, storeNames)
     return obj;
   }, {});
   return instance.serialize(storesToReset);
-};
+}
 
-var createStoreFromObject = function (alt, StoreModel, key, saveStore) {
+function createStoreFromObject(alt, StoreModel, key) {
   var storeInstance = undefined;
 
   var StoreProto = {};
@@ -419,14 +421,59 @@ var createStoreFromObject = function (alt, StoreModel, key, saveStore) {
   // create the instance and assign the public methods to the instance
   storeInstance = assign(new AltStore(alt.dispatcher, StoreProto, StoreProto.state, StoreModel), StoreProto.publicMethods);
 
-  /* istanbul ignore else */
-  if (saveStore) {
-    alt.stores[key] = storeInstance;
-    saveInitialSnapshot(alt, key);
+  return storeInstance;
+}
+
+function createStoreFromClass(alt, StoreModel, key) {
+  for (var _len = arguments.length, argsForConstructor = Array(_len > 3 ? _len - 3 : 0), _key = 3; _key < _len; _key++) {
+    argsForConstructor[_key - 3] = arguments[_key];
   }
 
+  var storeInstance = undefined;
+
+  // Creating a class here so we don't overload the provided store's
+  // prototype with the mixin behaviour and I'm extending from StoreModel
+  // so we can inherit any extensions from the provided store.
+
+  var Store = (function (_StoreModel) {
+    function Store() {
+      for (var _len2 = arguments.length, args = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
+        args[_key2] = arguments[_key2];
+      }
+
+      _classCallCheck(this, Store);
+
+      _get(Object.getPrototypeOf(Store.prototype), "constructor", this).apply(this, args);
+    }
+
+    _inherits(Store, _StoreModel);
+
+    return Store;
+  })(StoreModel);
+
+  assign(Store.prototype, StoreMixinListeners, StoreMixinEssentials, {
+    _storeName: key,
+    alt: alt,
+    dispatcher: alt.dispatcher,
+    getInstance: function getInstance() {
+      return storeInstance;
+    },
+    setState: function setState(nextState) {
+      doSetState(this, storeInstance, nextState);
+    }
+  });
+
+  Store.prototype[ALL_LISTENERS] = [];
+  Store.prototype[LIFECYCLE] = {};
+  Store.prototype[LISTENERS] = {};
+  Store.prototype[PUBLIC_METHODS] = {};
+
+  var store = _applyConstructor(Store, argsForConstructor);
+
+  storeInstance = assign(new AltStore(alt.dispatcher, store, null, StoreModel), getInternalMethods(StoreModel, builtIns));
+
   return storeInstance;
-};
+}
 
 var Alt = (function () {
   function Alt() {
@@ -448,14 +495,25 @@ var Alt = (function () {
         this.dispatcher.dispatch({ action: action, data: data });
       }
     },
+    createUnsavedStore: {
+      value: function createUnsavedStore(StoreModel) {
+        for (var _len = arguments.length, args = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
+          args[_key - 1] = arguments[_key];
+        }
+
+        var key = StoreModel.displayName || "";
+        return typeof StoreModel === "object" ? createStoreFromObject(this, StoreModel, key) : createStoreFromClass.apply(undefined, [this, StoreModel, key].concat(args));
+      }
+    },
     createStore: {
       value: function createStore(StoreModel, iden) {
-        var saveStore = arguments[2] === undefined ? true : arguments[2];
+        for (var _len = arguments.length, args = Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
+          args[_key - 2] = arguments[_key];
+        }
 
-        var storeInstance = undefined;
         var key = iden || StoreModel.name || StoreModel.displayName || "";
 
-        if (saveStore && (this.stores[key] || !key)) {
+        if (this.stores[key] || !key) {
           if (this.stores[key]) {
             warn("A store named " + key + " already exists, double check your store " + "names or pass in your own custom identifier for each store");
           } else {
@@ -465,51 +523,10 @@ var Alt = (function () {
           key = uid(this.stores, key);
         }
 
-        if (typeof StoreModel === "object") {
-          return createStoreFromObject(this, StoreModel, key, saveStore);
-        }
+        var storeInstance = typeof StoreModel === "object" ? createStoreFromObject(this, StoreModel, key) : createStoreFromClass.apply(undefined, [this, StoreModel, key].concat(args));
 
-        // Creating a class here so we don't overload the provided store's
-        // prototype with the mixin behaviour and I'm extending from StoreModel
-        // so we can inherit any extensions from the provided store.
-
-        var Store = (function (_StoreModel) {
-          function Store(alt) {
-            _classCallCheck(this, Store);
-
-            _get(Object.getPrototypeOf(Store.prototype), "constructor", this).call(this, alt);
-          }
-
-          _inherits(Store, _StoreModel);
-
-          return Store;
-        })(StoreModel);
-
-        assign(Store.prototype, StoreMixinListeners, StoreMixinEssentials, {
-          _storeName: key,
-          alt: this,
-          dispatcher: this.dispatcher,
-          getInstance: function getInstance() {
-            return storeInstance;
-          },
-          setState: function setState(nextState) {
-            doSetState(this, storeInstance, nextState);
-          }
-        });
-
-        Store.prototype[ALL_LISTENERS] = [];
-        Store.prototype[LIFECYCLE] = {};
-        Store.prototype[LISTENERS] = {};
-        Store.prototype[PUBLIC_METHODS] = {};
-
-        var store = new Store(this);
-
-        storeInstance = assign(new AltStore(this.dispatcher, store, null, StoreModel), getInternalMethods(StoreModel, builtIns));
-
-        if (saveStore) {
-          this.stores[key] = storeInstance;
-          saveInitialSnapshot(this, key);
-        }
+        this.stores[key] = storeInstance;
+        saveInitialSnapshot(this, key);
 
         return storeInstance;
       }
@@ -552,6 +569,10 @@ var Alt = (function () {
       value: function createActions(ActionsClass) {
         var _this8 = this;
 
+        for (var _len = arguments.length, argsForConstructor = Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
+          argsForConstructor[_key - 2] = arguments[_key];
+        }
+
         var exportObj = arguments[1] === undefined ? {} : arguments[1];
 
         var actions = {};
@@ -562,10 +583,14 @@ var Alt = (function () {
             assign(actions, getInternalMethods(ActionsClass.prototype, builtInProto));
 
             var ActionsGenerator = (function (_ActionsClass) {
-              function ActionsGenerator(alt) {
+              function ActionsGenerator() {
+                for (var _len2 = arguments.length, args = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
+                  args[_key2] = arguments[_key2];
+                }
+
                 _classCallCheck(this, ActionsGenerator);
 
-                _get(Object.getPrototypeOf(ActionsGenerator.prototype), "constructor", this).call(this, alt);
+                _get(Object.getPrototypeOf(ActionsGenerator.prototype), "constructor", this).apply(this, args);
               }
 
               _inherits(ActionsGenerator, _ActionsClass);
@@ -573,15 +598,15 @@ var Alt = (function () {
               _createClass(ActionsGenerator, {
                 generateActions: {
                   value: function generateActions() {
-                    for (var _len = arguments.length, actionNames = Array(_len), _key = 0; _key < _len; _key++) {
-                      actionNames[_key] = arguments[_key];
+                    for (var _len2 = arguments.length, actionNames = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
+                      actionNames[_key2] = arguments[_key2];
                     }
 
                     actionNames.forEach(function (actionName) {
                       // This is a function so we can later bind this to ActionCreator
                       actions[actionName] = function (x) {
-                        for (var _len2 = arguments.length, a = Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
-                          a[_key2 - 1] = arguments[_key2];
+                        for (var _len3 = arguments.length, a = Array(_len3 > 1 ? _len3 - 1 : 0), _key3 = 1; _key3 < _len3; _key3++) {
+                          a[_key3 - 1] = arguments[_key3];
                         }
 
                         this.dispatch(a.length ? [x].concat(a) : x);
@@ -594,7 +619,7 @@ var Alt = (function () {
               return ActionsGenerator;
             })(ActionsClass);
 
-            assign(actions, new ActionsGenerator(_this8));
+            assign(actions, _applyConstructor(ActionsGenerator, argsForConstructor));
           })();
         } else {
           assign(actions, ActionsClass);
@@ -667,12 +692,20 @@ var Alt = (function () {
       // Instance type methods for injecting alt into your application as context
 
       value: function addActions(name, ActionsClass) {
-        this.actions[name] = Array.isArray(ActionsClass) ? this.generateActions.apply(this, ActionsClass) : this.createActions(ActionsClass);
+        for (var _len = arguments.length, args = Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
+          args[_key - 2] = arguments[_key];
+        }
+
+        this.actions[name] = Array.isArray(ActionsClass) ? this.generateActions.apply(this, ActionsClass) : this.createActions.apply(this, [ActionsClass].concat(args));
       }
     },
     addStore: {
-      value: function addStore(name, StoreModel, saveStore) {
-        this.createStore(StoreModel, name, saveStore);
+      value: function addStore(name, StoreModel) {
+        for (var _len = arguments.length, args = Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
+          args[_key - 2] = arguments[_key];
+        }
+
+        this.createStore.apply(this, [StoreModel, name].concat(args));
       }
     },
     getActions: {
