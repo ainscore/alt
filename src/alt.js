@@ -1,9 +1,8 @@
 'use strict'
 
-import { Dispatcher } from 'flux'
+import flux from 'flux'
 import EventEmitter from 'eventemitter3'
-import Symbol from 'es-symbol'
-import assign from 'object-assign'
+let Dispatcher = flux.Dispatcher;
 
 const ACTION_HANDLER = Symbol('action creator handler')
 const ACTION_KEY = Symbol('holds the actions uid symbol for listening')
@@ -59,12 +58,12 @@ function doSetState(store, storeInstance, nextState) {
   }
 
   if (typeof nextState === 'function') {
-    assign(
+    Object.assign(
       storeInstance[STATE_CONTAINER],
       nextState(storeInstance[STATE_CONTAINER])
     )
   } else {
-    assign(storeInstance[STATE_CONTAINER], nextState)
+    Object.assign(storeInstance[STATE_CONTAINER], nextState)
   }
 
   storeInstance[STATE_CHANGED] = true
@@ -97,11 +96,11 @@ class AltStore {
     this.boundListeners = model[ALL_LISTENERS]
     this.StoreModel = StoreModel
     if (typeof this.StoreModel === 'object') {
-      this.StoreModel.state = assign({}, StoreModel.state)
+      this.StoreModel.state = Object.assign({}, StoreModel.state)
     }
 
-    assign(this[LIFECYCLE], model[LIFECYCLE])
-    assign(this, model[PUBLIC_METHODS])
+    Object.assign(this[LIFECYCLE], model[LIFECYCLE])
+    Object.assign(this, model[PUBLIC_METHODS])
 
     // Register dispatcher
     this.dispatchToken = dispatcher.register((payload) => {
@@ -331,7 +330,7 @@ function setAppState(instance, data, onStore) {
       if (store[LIFECYCLE].deserialize) {
         obj[key] = store[LIFECYCLE].deserialize(obj[key]) || obj[key]
       }
-      assign(store[STATE_CONTAINER], obj[key])
+      Object.assign(store[STATE_CONTAINER], obj[key])
       onStore(store)
     }
   })
@@ -378,7 +377,7 @@ function createStoreFromObject(alt, StoreModel, key) {
   StoreProto[LIFECYCLE] = {}
   StoreProto[LISTENERS] = {}
 
-  assign(StoreProto, {
+  Object.assign(StoreProto, {
     _storeName: key,
     alt,
     dispatcher: alt.dispatcher,
@@ -404,8 +403,8 @@ function createStoreFromObject(alt, StoreModel, key) {
     })
   }
 
-  // create the instance and assign the public methods to the instance
-  storeInstance = assign(
+  // create the instance and Object.assign the public methods to the instance
+  storeInstance = Object.assign(
     new AltStore(alt.dispatcher, StoreProto, StoreProto.state, StoreModel),
     StoreProto.publicMethods
   )
@@ -425,7 +424,7 @@ function createStoreFromClass(alt, StoreModel, key, ...argsForConstructor) {
     }
   }
 
-  assign(Store.prototype, StoreMixinListeners, StoreMixinEssentials, {
+  Object.assign(Store.prototype, StoreMixinListeners, StoreMixinEssentials, {
     _storeName: key,
     alt: alt,
     dispatcher: alt.dispatcher,
@@ -444,7 +443,7 @@ function createStoreFromClass(alt, StoreModel, key, ...argsForConstructor) {
 
   const store = new Store(...argsForConstructor)
 
-  storeInstance = assign(
+  storeInstance = Object.assign(
     new AltStore(alt.dispatcher, store, null, StoreModel),
     getInternalMethods(StoreModel, builtIns)
   )
@@ -528,7 +527,7 @@ class Alt {
     const key = ActionsClass.name || ActionsClass.displayName || ''
 
     if (typeof ActionsClass === 'function') {
-      assign(actions, getInternalMethods(ActionsClass.prototype, builtInProto))
+      Object.assign(actions, getInternalMethods(ActionsClass.prototype, builtInProto))
       class ActionsGenerator extends ActionsClass {
         constructor(...args) {
           super(...args)
@@ -544,9 +543,9 @@ class Alt {
         }
       }
 
-      assign(actions, new ActionsGenerator(...argsForConstructor))
+      Object.assign(actions, new ActionsGenerator(...argsForConstructor))
     } else {
-      assign(actions, ActionsClass)
+      Object.assign(actions, ActionsClass)
     }
 
     return Object.keys(actions).reduce((obj, action) => {
@@ -560,7 +559,7 @@ class Alt {
   takeSnapshot(...storeNames) {
     const state = snapshot(this, ...storeNames)
     this[LAST_SNAPSHOT] = this.serialize(
-      assign(this.deserialize(this[LAST_SNAPSHOT]), state)
+      Object.assign(this.deserialize(this[LAST_SNAPSHOT]), state)
     )
     return this.serialize(state)
   }
